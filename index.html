@@ -108,6 +108,9 @@ button{font:inherit}
 .nn-row-playing{color:var(--ink)}
 .nn-row-playing .nn-row-idx{color:var(--neon-magenta);text-shadow:0 0 8px var(--magenta-glow)}
 .nn-row-selected{background:var(--accent-soft);color:var(--ink)}
+.pl-list{position:relative}
+.nn-row-dragging{opacity:.45}
+.pl-drop-line{position:absolute;left:4px;right:4px;height:2px;background:var(--neon-cyan);box-shadow:0 0 8px var(--cyan-glow);border-radius:2px;pointer-events:none}
 .pl-foot{margin-top:var(--space-2);font-size:11px;color:var(--ink-muted);display:flex;justify-content:space-between}
 .hidden,.lrc-empty.hidden,.skin-menu.hidden{display:none}
 
@@ -160,7 +163,7 @@ button{font:inherit}
 <!-- ===== 主視窗 ===== -->
 <section class="nn-win" id="winMain" style="left:80px;top:80px">
   <div class="nn-win-bar">
-    <span class="nn-win-brand">阿系喲</span><span class="nn-win-title">播放器 <span style="opacity:.6" title="版本號：更新後這個數字會變">v2.1</span></span>
+    <span class="nn-win-brand">阿系喲</span><span class="nn-win-title">播放器 <span style="opacity:.6" title="版本號：更新後這個數字會變">v2.2</span></span>
     <button class="nn-win-ctl" id="btnSkin" aria-label="外觀" title="外觀：換皮膚、換頻譜樣式"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v11"/></svg></button>
     <button class="nn-win-ctl" data-act="collapse" aria-label="收合"><svg viewBox="0 0 16 16"><path d="M3 8h10"/></svg></button>
   </div>
@@ -332,6 +335,7 @@ function readEntries(entries) {
 
 // ===== 播放清單畫面 =====
 function renderList() {
+  if (dragActive) { pendingRender = true; return; }   // 拖曳中先不重畫清單
   var list = $('list');
   if (!tracks.length) {
     list.innerHTML = '<div class="pl-empty">把 MP3 檔案或整個資料夾<br>拖到這裡</div>';
@@ -345,11 +349,81 @@ function renderList() {
       row.title = t.name;
       row.onclick = function () { selected = i; renderList(); };
       row.ondblclick = function () { playIndex(i); };
+      row.dataset.index = i;
+      row.addEventListener('pointerdown', startRowDrag);
       list.appendChild(row);
     });
   }
   var total = tracks.reduce(function (s, t) { return s + (isNaN(t.duration) ? 0 : t.duration); }, 0);
   $('count').textContent = tracks.length + ' 首' + (tracks.length ? '・' + fmt(total) : '');
+}
+
+// ===== 用滑鼠拖曳調整歌曲順序 =====
+// 按住一首歌往上或往下拖，放開就移到那個位置
+var dragActive = false, pendingRender = false;
+function startRowDrag(e) {
+  if (e.button !== 0) return;
+  var row = e.currentTarget, from = +row.dataset.index, list = $('list');
+  var startY = e.clientY, started = false, line = null, target = from, scrollTimer = null, lastY = e.clientY;
+
+  function targetAt(y) {
+    var rows = list.querySelectorAll('.nn-row');
+    for (var k = 0; k < rows.length; k++) {
+      var r = rows[k].getBoundingClientRect();
+      if (y < r.top + r.height / 2) return k;
+    }
+    return rows.length;
+  }
+  function placeLine() {
+    var rows = list.querySelectorAll('.nn-row'), lr = list.getBoundingClientRect();
+    var ref = rows[target] ? rows[target].getBoundingClientRect().top : rows[rows.length - 1].getBoundingClientRect().bottom;
+    line.style.top = (ref - lr.top + list.scrollTop - 1) + 'px';
+  }
+  function move(ev) {
+    lastY = ev.clientY;
+    if (!started) {
+      if (Math.abs(ev.clientY - startY) < 5) return;   // 移動一點點才算拖曳，不影響點一下、按兩下
+      started = true; dragActive = true;
+      row.classList.add('nn-row-dragging');
+      line = document.createElement('div'); line.className = 'pl-drop-line';
+      list.appendChild(line);
+      // 拖到清單上下邊緣時自動捲動
+      scrollTimer = setInterval(function () {
+        var lr = list.getBoundingClientRect();
+        if (lastY < lr.top + 24) list.scrollTop -= 8;
+        else if (lastY > lr.bottom - 24) list.scrollTop += 8;
+        target = targetAt(lastY); placeLine();
+      }, 30);
+    }
+    target = targetAt(ev.clientY); placeLine();
+  }
+  function up() {
+    row.removeEventListener('pointermove', move);
+    row.removeEventListener('pointerup', up);
+    row.removeEventListener('pointercancel', up);
+    clearInterval(scrollTimer);
+    if (!started) return;
+    dragActive = false;
+    if (line) line.remove();
+    row.classList.remove('nn-row-dragging');
+    var to = target > from ? target - 1 : target;
+    if (to !== from) moveTrack(from, to);
+    else if (pendingRender) renderList();
+    pendingRender = false;
+  }
+  row.setPointerCapture(e.pointerId);
+  row.addEventListener('pointermove', move);
+  row.addEventListener('pointerup', up);
+  row.addEventListener('pointercancel', up);
+}
+function moveTrack(from, to) {
+  var playing = tracks[current], sel = tracks[from];
+  var t = tracks.splice(from, 1)[0];
+  tracks.splice(to, 0, t);
+  current = tracks.indexOf(playing);
+  selected = tracks.indexOf(sel);
+  renderList(); dbSaveOrder();
+  if (current >= 0) $('sub').textContent = '第 ' + (current + 1) + ' 首，共 ' + tracks.length + ' 首';
 }
 
 $('btnRemove').onclick = removeSelected;
