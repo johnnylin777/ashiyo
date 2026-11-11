@@ -1,0 +1,921 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>阿系呦影音剪輯</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70;
+    --line: #e2e0da; --accent: #d9480f; --accent-soft: rgba(217,72,15,.16);
+    --wave: #8a8a92; --wave-sel: #d9480f; --view: rgba(29,29,31,.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#141416; --panel:#1e1e21; --text:#ececef; --muted:#9a9aa2;
+      --line:#2e2e33; --accent:#ff7a45; --accent-soft:rgba(255,122,69,.18);
+      --wave:#5d5d66; --wave-sel:#ff7a45; --view: rgba(236,236,239,.10); }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font: 15px/1.5 system-ui, "Microsoft JhengHei", "PingFang TC", sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  #drop { border: 2px dashed var(--line); border-radius: 12px; padding: 36px 16px; text-align: center;
+    cursor: pointer; color: var(--muted); transition: .15s; }
+  #drop.over, #drop:hover { border-color: var(--accent); color: var(--text); }
+  #drop strong { color: var(--accent); }
+  .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 12px; }
+  #fileName { font-weight: 600; word-break: break-all; }
+  #clock { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; margin-left: auto; }
+  #clock small { font-size: 14px; color: var(--muted); font-weight: 400; }
+  canvas { width: 100%; display: block; border-radius: 8px; background: var(--bg); touch-action: none; user-select: none; }
+  #wave { height: 190px; cursor: crosshair; }
+  #overview { height: 40px; margin-top: 8px; cursor: pointer; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: center; margin-top: 14px; }
+  label { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  input[type=text] { width: 100px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--text); font: inherit; font-variant-numeric: tabular-nums; }
+  input[type=text].active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  input[type=number] { width: 70px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--text); font: inherit; }
+  select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+  button { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel);
+    color: var(--text); font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.sm { padding: 4px 7px; font-size: 12px; font-variant-numeric: tabular-nums; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .edge { display: flex; align-items: center; gap: 4px; }
+  .info { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .spacer { flex: 1; }
+  progress { width: 160px; height: 8px; accent-color: var(--accent); }
+  .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+  details { margin-top: 14px; color: var(--muted); font-size: 13px; }
+  summary { cursor: pointer; }
+  kbd { display: inline-block; min-width: 20px; padding: 0 5px; border: 1px solid var(--line); border-bottom-width: 2px;
+    border-radius: 4px; font: 12px/18px ui-monospace, monospace; text-align: center; color: var(--text); background: var(--bg); }
+  .keys { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin-top: 8px; }
+  #videoBox { background: #000; border-radius: 8px; margin-bottom: 12px; display: flex; justify-content: center; overflow: hidden; }
+  #videoBox video { max-width: 100%; max-height: 360px; display: block; cursor: pointer; }
+  #vstatus { margin-top: 8px; }
+  .tools { margin: 0 0 12px; }
+  button.tool { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  button.tool:hover { background: var(--accent-soft); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>阿系呦影音剪輯</h1>
+  <p class="sub">在瀏覽器裡直接剪 MP3 和 MP4，檔案不會上傳到任何地方。</p>
+
+  <div class="panel">
+    <div id="drop"><strong>點這裡選擇檔案</strong>，或把 MP3 / MP4 拖進來</div>
+    <input id="file" type="file" accept="audio/*,video/*,.mp3,.mp4,.m4a,.mov" hidden>
+  </div>
+
+  <div id="editor" class="panel hidden">
+    <div class="head">
+      <div id="fileName"></div>
+      <div id="clock"></div>
+    </div>
+    <div id="videoBox" class="hidden"><video id="video" muted playsinline preload="auto"></video></div>
+    <div class="row tools">
+      <button id="cutKeep" class="tool" title="只留下選取的部分，其他都剪掉（K）">✂ 只保留選取</button>
+      <button id="cutDel" class="tool" title="把選取的這段剪掉，前後自動接起來（Delete）">✂ 刪除選取</button>
+      <button id="undo" title="復原（Ctrl+Z）">↶ 復原</button>
+      <button id="redo" title="重做（Ctrl+Y）">↷ 重做</button>
+      <span class="info" id="editInfo"></span>
+    </div>
+    <canvas id="wave"></canvas>
+    <canvas id="overview"></canvas>
+    <p class="hint">步驟：① 在波形上拖曳選一段 → ② 按剪刀「只保留選取」或「刪除選取」（可重複剪很多次，剪錯按復原）→ ③ 匯出。單擊波形從該處播放，滾輪縮放，Shift + 滾輪左右捲動。</p>
+
+    <div class="row">
+      <button id="zoomIn" title="放大（+）">＋ 放大</button>
+      <button id="zoomOut" title="縮小（-）">－ 縮小</button>
+      <button id="zoomSel" title="縮放到選取（Z）">縮放到選取</button>
+      <button id="zoomAll" title="顯示全部（0）">顯示全部</button>
+      <span class="info" id="viewInfo"></span>
+      <span class="spacer"></span>
+      <button id="playSel">▶ 播放選取</button>
+      <button id="playAll">▶ 從頭播放</button>
+      <button id="stop">■ 停止</button>
+    </div>
+
+    <div class="row">
+      <div class="edge">
+        <label>開始 <input id="startIn" type="text"></label>
+        <button class="sm" data-edge="a" data-d="-0.1">−.1</button>
+        <button class="sm" data-edge="a" data-d="-0.01">−.01</button>
+        <button class="sm" data-edge="a" data-d="0.01">+.01</button>
+        <button class="sm" data-edge="a" data-d="0.1">+.1</button>
+      </div>
+      <div class="edge">
+        <label>結束 <input id="endIn" type="text"></label>
+        <button class="sm" data-edge="b" data-d="-0.1">−.1</button>
+        <button class="sm" data-edge="b" data-d="-0.01">−.01</button>
+        <button class="sm" data-edge="b" data-d="0.01">+.01</button>
+        <button class="sm" data-edge="b" data-d="0.1">+.1</button>
+      </div>
+      <span class="info" id="lenInfo"></span>
+    </div>
+
+    <div class="row">
+      <label><input id="snap" type="checkbox" checked> 拖曳時對齊靜音處</label>
+      <button id="snapNow" class="sm" title="把起點、終點各自移到附近最安靜的位置">立刻對齊靜音</button>
+      <label><input id="autoPreview" type="checkbox" checked> 微調後自動試聽</label>
+    </div>
+
+    <div class="row">
+      <label>淡入（秒）<input id="fadeIn" type="number" min="0" step="0.5" value="0"></label>
+      <label>淡出（秒）<input id="fadeOut" type="number" min="0" step="0.5" value="0"></label>
+      <label>位元率
+        <select id="kbps">
+          <option>128</option><option selected>192</option><option>256</option><option>320</option>
+        </select> kbps
+      </label>
+      <label id="mp4ModeWrap" class="hidden">影片
+        <select id="mp4Mode">
+          <option value="exact">精準剪輯（重新編碼，較慢）</option>
+          <option value="fast">快速（不重新編碼，切點對齊關鍵影格）</option>
+        </select>
+      </label>
+      <span class="spacer"></span>
+      <progress id="prog" class="hidden" max="1" value="0"></progress>
+      <button id="exportWav">匯出 WAV</button>
+      <button id="exportMp3" class="primary">匯出 MP3</button>
+      <button id="exportMp4" class="primary hidden">匯出 MP4</button>
+    </div>
+    <div class="info" id="vstatus"></div>
+    <div class="info" id="meta" style="margin-top:12px"></div>
+
+    <details>
+      <summary>快捷鍵</summary>
+      <div class="keys">
+        <span><kbd>K</kbd></span><span>✂ 只保留選取</span>
+        <span><kbd>Delete</kbd></span><span>✂ 刪除選取（前後自動接起來）</span>
+        <span><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></span><span>復原 / 重做</span>
+        <span><kbd>Space</kbd></span><span>播放 / 停止選取範圍</span>
+        <span><kbd>I</kbd> <kbd>O</kbd></span><span>把目前播放位置設為起點 / 終點（停止時用游標位置）</span>
+        <span><kbd>←</kbd> <kbd>→</kbd></span><span>微調目前的邊（橘框那個）0.01 秒；加 <kbd>Shift</kbd> 為 0.1 秒、加 <kbd>Ctrl</kbd> 為 1 秒</span>
+        <span><kbd>Tab</kbd></span><span>切換要微調起點還是終點</span>
+        <span><kbd>+</kbd> <kbd>-</kbd></span><span>放大 / 縮小</span>
+        <span><kbd>Z</kbd> <kbd>0</kbd></span><span>縮放到選取 / 顯示全部</span>
+      </div>
+    </details>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const drop = $('drop'), fileIn = $('file');
+const canvas = $('wave'), ctx2d = canvas.getContext('2d');
+const ov = $('overview'), ovx = ov.getContext('2d');
+const RULER = 20, BS = 256, MINVIEW = 0.02;
+let actx, buffer, chData = [], fileBase = 'audio';
+let sel = { a: 0, b: 0 }, view = { s: 0, e: 1 }, active = 'a', cursor = 0, hoverT = null;
+let blkMin, blkMax;                       // 每 256 個樣本一組的最小/最大值（給縮小時畫波形用）
+let src = null, playStartCtx = 0, playOffset = 0, raf = 0;
+
+// ---------- 載入 ----------
+drop.onclick = () => fileIn.click();
+fileIn.onchange = () => fileIn.files[0] && load(fileIn.files[0]);
+['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer.files[0]) load(e.dataTransfer.files[0]); });
+
+// ---------- 影片相關狀態 ----------
+// segs：目前時間軸對應到原始檔案的哪些片段，例如 [[0, 5], [8, 20]] 表示剪掉了原檔 5～8 秒
+const video = $('video');
+let mediaFile = null, isVideo = false, hasAudio = true, videoURL = null, segs = [[0, 0]], metaExtra = '';
+
+function waitMeta() {
+  return new Promise((res, rej) => {
+    video.onloadedmetadata = () => res(); video.onerror = () => rej(new Error('video'));
+  });
+}
+
+async function load(file) {
+  stop();
+  actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+  drop.textContent = '讀取中…';
+  let vid = file.type.startsWith('video/') || /\.(mp4|m4v|mov|webm|mkv)$/i.test(file.name);
+  let buf = null;
+  try { buf = await actx.decodeAudioData(await file.arrayBuffer()); } catch (e) {}
+  if (vid) {
+    if (videoURL) URL.revokeObjectURL(videoURL);
+    videoURL = URL.createObjectURL(file);
+    const p = waitMeta();
+    video.src = videoURL;
+    try { await p; if (!video.videoWidth) vid = false; } catch { vid = false; }
+  }
+  if (!buf && !vid) {
+    drop.innerHTML = '<strong>無法讀取這個檔案</strong>，請換一個 MP3 或 MP4 試試';
+    return;
+  }
+  // 瀏覽器讀不到影片的聲音時，改用影片編碼器把聲音取出來（直接雙擊 HTML 打開時編碼器無法啟動，就跳過）
+  let audioNote = '';
+  const canFF = !(location.protocol === 'file:' || location.origin === 'null');
+  if (vid && !buf) {
+    if (canFF) {
+      try {
+        buf = await extractAudio(file, s => { drop.textContent = s; });
+        if (!buf) audioNote = '（這個影片沒有聲音）';
+      } catch (e) {
+        console.warn(e);
+        audioNote = '（讀不到聲音波形，播放時改用影片本身的聲音）';
+      }
+    } else {
+      audioNote = '（讀不到聲音波形，播放時改用影片本身的聲音。用「啟動阿系呦影音剪輯.bat」打開就能顯示波形）';
+    }
+  }
+  hasAudio = !!buf;
+  // 讀不到聲音：做一段同樣長度的無聲音軌，讓波形和剪輯照常運作；播放時改讓影片本身出聲
+  if (!buf) buf = actx.createBuffer(1, Math.ceil(video.duration * 3000), 3000);
+  video.muted = hasAudio;
+  mediaFile = file; isVideo = vid;
+  metaExtra = isVideo ? ` · 影片 ${video.videoWidth}×${video.videoHeight}${audioNote}` : '';
+  $('videoBox').classList.toggle('hidden', !isVideo);
+  $('mp4ModeWrap').classList.toggle('hidden', !isVideo);
+  $('exportMp4').classList.toggle('hidden', !isVideo);
+  $('vstatus').textContent = '';
+  if (!isVideo) { video.removeAttribute('src'); video.load(); }
+  fileBase = file.name.replace(/\.[^.]+$/, '');
+  $('fileName').textContent = file.name;
+  drop.innerHTML = '<strong>換一個檔案</strong>，或拖曳新檔案進來';
+  $('editor').classList.remove('hidden');
+  undoStack = []; redoStack = []; cursor = 0;
+  setBuffer(buf, [[0, buf.duration]]);
+  showFrame(0);
+}
+
+// 把剪輯後時間軸上的 [t0, t1] 換算成原始檔案的片段
+function sliceSegs(list, t0, t1) {
+  const out = []; let acc = 0;
+  for (const [s, e] of list) {
+    const len = e - s, lo = Math.max(t0, acc), hi = Math.min(t1, acc + len);
+    if (hi - lo > 1e-6) {
+      const ns = s + lo - acc, ne = s + hi - acc, last = out[out.length - 1];
+      if (last && Math.abs(last[1] - ns) < 1e-4) last[1] = ne; else out.push([ns, ne]);
+    }
+    acc += len;
+  }
+  return out;
+}
+// 剪輯後的時間 → 原始檔案的時間
+function mapT(t) {
+  let acc = 0;
+  for (const [s, e] of segs) { if (t < acc + (e - s)) return s + Math.max(0, t - acc); acc += e - s; }
+  const last = segs[segs.length - 1]; return last ? last[1] : 0;
+}
+function showFrame(t) {
+  if (!isVideo || src) return;
+  video.currentTime = mapT(t);
+}
+video.addEventListener('click', () => { if (buffer) src ? stop() : play(sel.a, sel.b); });
+
+// 換上新的音訊（載入或剪輯後），重設選取與檢視
+function setBuffer(buf, newSegs) {
+  buffer = buf;
+  segs = newSegs;
+  chData = [];
+  for (let c = 0; c < buffer.numberOfChannels; c++) chData.push(buffer.getChannelData(c));
+  $('meta').textContent = `長度 ${fmt(buffer.duration)} · ${buffer.sampleRate} Hz · ${buffer.numberOfChannels === 1 ? '單聲道' : '立體聲'}${metaExtra}`;
+  sel = { a: 0, b: buffer.duration }; view = { s: 0, e: buffer.duration }; cursor = Math.min(cursor, buffer.duration); active = 'a';
+  computeBlocks();
+  $('undo').disabled = !undoStack.length; $('redo').disabled = !redoStack.length;
+  $('editInfo').textContent = undoStack.length ? `已剪輯 ${undoStack.length} 次` : '';
+  syncInputs(); draw();
+}
+
+// ---------- 剪刀 ----------
+let undoStack = [], redoStack = [];
+function makeBuffer(len) {
+  return actx.createBuffer(buffer.numberOfChannels, Math.max(1, len), buffer.sampleRate);
+}
+function applyEdit(nb, nsegs) {
+  stop();
+  undoStack.push({ buffer, segs }); if (undoStack.length > 30) undoStack.shift();
+  redoStack = [];
+  setBuffer(nb, nsegs);
+}
+function selSamples() {
+  const sr = buffer.sampleRate;
+  return [Math.floor(sel.a * sr), Math.min(buffer.length, Math.floor(sel.b * sr))];
+}
+const isAll = () => sel.a <= 0.005 && sel.b >= buffer.duration - 0.005;
+// 只保留選取
+function cutKeep() {
+  if (!buffer || isAll()) return;
+  const [s, e] = selSamples(), nb = makeBuffer(e - s);
+  chData.forEach((ch, c) => nb.copyToChannel(ch.subarray(s, e), c));
+  const sr = buffer.sampleRate;
+  applyEdit(nb, sliceSegs(segs, s / sr, e / sr));
+  showFrame(0);
+}
+// 刪除選取，前後用 10 毫秒交叉淡化接起來，避免接縫有「啪」聲
+function cutDelete() {
+  if (!buffer) return;
+  if (isAll()) { alert('不能把整段都刪掉喔。請先拖曳選取要刪除的那一段。'); return; }
+  const [s, e] = selSamples(), len = buffer.length;
+  const f = Math.min(Math.round(buffer.sampleRate * 0.01), s, len - e);
+  const nb = makeBuffer(s + (len - e) - f);
+  chData.forEach((ch, c) => {
+    const out = new Float32Array(nb.length);
+    out.set(ch.subarray(0, s - f), 0);
+    for (let i = 0; i < f; i++) { const k = (i + 0.5) / f; out[s - f + i] = ch[s - f + i] * (1 - k) + ch[e + i] * k; }
+    out.set(ch.subarray(e + f), s);
+    nb.copyToChannel(out, c);
+  });
+  // 交叉淡化的 f 個樣本算在前段，所以後段從 e + f 開始
+  const sr = buffer.sampleRate, dur = buffer.duration;
+  const nsegs = sliceSegs(segs, 0, s / sr).concat(sliceSegs(segs, (e + f) / sr, dur));
+  applyEdit(nb, nsegs);
+  cursor = Math.max(0, (s - f) / sr); draw(); showFrame(cursor);
+}
+function undo() { if (!undoStack.length) return; stop(); redoStack.push({ buffer, segs }); const st = undoStack.pop(); setBuffer(st.buffer, st.segs); showFrame(cursor); }
+function redo() { if (!redoStack.length) return; stop(); undoStack.push({ buffer, segs }); const st = redoStack.pop(); setBuffer(st.buffer, st.segs); showFrame(cursor); }
+$('cutKeep').onclick = cutKeep;
+$('cutDel').onclick = cutDelete;
+$('undo').onclick = undo;
+$('redo').onclick = redo;
+
+// ---------- 小工具 ----------
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+function fmt(t) {
+  t = Math.max(0, t);
+  const m = Math.floor(t / 60), s = t - m * 60;
+  return `${m}:${s.toFixed(2).padStart(5, '0')}`;
+}
+function parse(str) {
+  const p = str.trim().split(':').map(Number);
+  if (!p.length || p.some(isNaN)) return null;
+  return p.reduce((acc, v) => acc * 60 + v, 0);
+}
+const nowTime = () => src ? playOffset + (actx.currentTime - playStartCtx) : cursor;
+
+function syncInputs() {
+  $('startIn').value = fmt(sel.a);
+  $('endIn').value = fmt(sel.b);
+  $('startIn').classList.toggle('active', active === 'a');
+  $('endIn').classList.toggle('active', active === 'b');
+  $('lenInfo').textContent = `選取長度 ${fmt(sel.b - sel.a)}`;
+}
+function setEdge(edge, t) {
+  if (edge === 'a') sel.a = clamp(t, 0, sel.b - 0.01);
+  else sel.b = clamp(t, sel.a + 0.01, buffer.duration);
+  active = edge;
+}
+$('startIn').onchange = () => { const v = parse($('startIn').value); if (v != null) setEdge('a', v); syncInputs(); draw(); };
+$('endIn').onchange = () => { const v = parse($('endIn').value); if (v != null) setEdge('b', v); syncInputs(); draw(); };
+$('startIn').onfocus = () => { active = 'a'; syncInputs(); draw(); };
+$('endIn').onfocus = () => { active = 'b'; syncInputs(); draw(); };
+
+// ---------- 波形資料 ----------
+function computeBlocks() {
+  const n = Math.ceil(buffer.length / BS);
+  blkMin = new Float32Array(n); blkMax = new Float32Array(n);
+  for (let b = 0; b < n; b++) {
+    let mn = 0, mx = 0;
+    const s = b * BS, e = Math.min(s + BS, buffer.length);
+    for (const ch of chData) for (let j = s; j < e; j++) { const v = ch[j]; if (v < mn) mn = v; else if (v > mx) mx = v; }
+    blkMin[b] = mn; blkMax[b] = mx;
+  }
+}
+// 取得某個樣本區間 [i0, i1) 的最小/最大值
+function rangeMinMax(i0, i1) {
+  let mn = 0, mx = 0;
+  if (i1 - i0 >= BS * 2) {
+    const b0 = Math.floor(i0 / BS), b1 = Math.min(blkMin.length, Math.ceil(i1 / BS));
+    for (let b = b0; b < b1; b++) { if (blkMin[b] < mn) mn = blkMin[b]; if (blkMax[b] > mx) mx = blkMax[b]; }
+  } else {
+    let first = true;
+    for (const ch of chData) for (let j = i0; j < Math.max(i1, i0 + 1) && j < ch.length; j++) {
+      const v = ch[j];
+      if (first) { mn = mx = v; first = false; } else { if (v < mn) mn = v; if (v > mx) mx = v; }
+    }
+  }
+  return [mn, mx];
+}
+
+// ---------- 檢視範圍（縮放 / 捲動） ----------
+function setView(s, e) {
+  const dur = buffer.duration, len = clamp(e - s, Math.min(MINVIEW, dur), dur);
+  s = clamp(s, 0, dur - len);
+  view = { s, e: s + len };
+}
+function zoom(factor, anchor) {
+  const len = view.e - view.s;
+  if (anchor == null) anchor = (src || (cursor >= view.s && cursor <= view.e)) ? clamp(nowTime(), view.s, view.e) : (view.s + view.e) / 2;
+  const frac = (anchor - view.s) / len, nl = len * factor;
+  setView(anchor - frac * nl, anchor - frac * nl + nl);
+  draw();
+}
+$('zoomIn').onclick = () => zoom(0.5);
+$('zoomOut').onclick = () => zoom(2);
+$('zoomSel').onclick = () => { const pad = (sel.b - sel.a) * 0.05; setView(sel.a - pad, sel.b + pad); draw(); };
+$('zoomAll').onclick = () => { setView(0, buffer.duration); draw(); };
+
+canvas.addEventListener('wheel', e => {
+  if (!buffer) return;
+  e.preventDefault();
+  const len = view.e - view.s;
+  if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+    const d = (e.shiftKey ? e.deltaY : e.deltaX) || e.deltaY;
+    setView(view.s + d / canvas.clientWidth * len, view.e + d / canvas.clientWidth * len);
+    draw();
+  } else {
+    zoom(Math.pow(1.0015, e.deltaY), posToTime(e));
+  }
+}, { passive: false });
+
+// ---------- 繪圖 ----------
+function fitCanvas(c, g) {
+  const dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  return [w, h];
+}
+function niceStep(len, w) {
+  const steps = [0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,15,30,60,120,300,600,1200];
+  for (const s of steps) if (s / len * w >= 80) return s;
+  return 1800;
+}
+function draw() {
+  if (!buffer) return;
+  const css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim();
+  const sr = buffer.sampleRate, dur = buffer.duration;
+
+  // --- 主波形 ---
+  const [w, h] = fitCanvas(canvas, ctx2d);
+  const len = view.e - view.s, tx = t => (t - view.s) / len * w;
+  const xa = tx(sel.a), xb = tx(sel.b);
+  ctx2d.fillStyle = col('--accent-soft');
+  ctx2d.fillRect(xa, RULER, xb - xa, h - RULER);
+
+  const mid = RULER + (h - RULER) / 2, amp = (h - RULER) / 2 - 6;
+  const spp = len * sr / w;
+  for (let x = 0; x < w; x++) {
+    const i0 = Math.floor(view.s * sr + x * spp), i1 = Math.floor(view.s * sr + (x + 1) * spp);
+    const [mn, mx] = rangeMinMax(i0, i1);
+    const y1 = mid - mx * amp, y2 = mid - mn * amp;
+    const t = view.s + (x + 0.5) / w * len;
+    ctx2d.fillStyle = (t >= sel.a && t <= sel.b) ? col('--wave-sel') : col('--wave');
+    ctx2d.fillRect(x, y1, 1, Math.max(1, y2 - y1));
+  }
+
+  // 刻度尺
+  ctx2d.fillStyle = col('--line');
+  ctx2d.fillRect(0, RULER - 1, w, 1);
+  ctx2d.fillStyle = col('--muted');
+  ctx2d.font = '11px system-ui, sans-serif';
+  ctx2d.textBaseline = 'middle';
+  const step = niceStep(len, w);
+  for (let t = Math.ceil(view.s / step) * step; t <= view.e; t += step) {
+    const x = tx(t);
+    ctx2d.fillRect(x, RULER - 6, 1, 5);
+    ctx2d.fillText(step >= 1 ? fmt(t).replace(/\.00$/, '') : fmt(t), x + 3, RULER / 2 - 1);
+  }
+
+  // 起點 / 終點線（目前微調中的那條比較粗，上面有小三角）
+  for (const [edge, x] of [['a', xa], ['b', xb]]) {
+    if (x < -4 || x > w + 4) continue;
+    const on = edge === active;
+    ctx2d.fillStyle = col('--wave-sel');
+    ctx2d.fillRect(x - (on ? 1.5 : 1), RULER, on ? 3 : 2, h - RULER);
+    if (on) { ctx2d.beginPath(); ctx2d.moveTo(x - 6, RULER); ctx2d.lineTo(x + 6, RULER); ctx2d.lineTo(x, RULER + 8); ctx2d.fill(); }
+  }
+  // 播放線 / 游標
+  const tp = nowTime(), xp = tx(tp);
+  ctx2d.fillStyle = col('--text');
+  if (src) ctx2d.fillRect(xp - 0.75, 0, 1.5, h);
+  else { ctx2d.globalAlpha = 0.5; ctx2d.fillRect(xp - 0.5, RULER, 1, h - RULER); ctx2d.globalAlpha = 1; }
+
+  // --- 總覽小條 ---
+  const [ow, oh] = fitCanvas(ov, ovx);
+  const om = oh / 2, otx = t => t / dur * ow;
+  ovx.fillStyle = col('--accent-soft');
+  ovx.fillRect(otx(sel.a), 0, otx(sel.b) - otx(sel.a), oh);
+  const ospp = buffer.length / ow;
+  for (let x = 0; x < ow; x++) {
+    const [mn, mx] = rangeMinMax(Math.floor(x * ospp), Math.floor((x + 1) * ospp));
+    const t = (x + 0.5) / ow * dur;
+    ovx.fillStyle = (t >= sel.a && t <= sel.b) ? col('--wave-sel') : col('--wave');
+    ovx.fillRect(x, om - mx * (om - 3), 1, Math.max(1, (mx - mn) * (om - 3)));
+  }
+  ovx.fillStyle = col('--view');
+  ovx.fillRect(otx(view.s), 0, Math.max(3, otx(view.e) - otx(view.s)), oh);
+  ovx.strokeStyle = col('--muted'); ovx.lineWidth = 1;
+  ovx.strokeRect(otx(view.s) + 0.5, 0.5, Math.max(3, otx(view.e) - otx(view.s)) - 1, oh - 1);
+  ovx.fillStyle = col('--text');
+  ovx.fillRect(otx(tp), 0, 1, oh);
+
+  // --- 文字資訊 ---
+  $('clock').innerHTML = `${src ? '▶ ' : ''}${fmt(tp)} <small>/ ${fmt(dur)}${hoverT != null ? `　滑鼠 ${fmt(hoverT)}` : ''}</small>`;
+  $('viewInfo').textContent = len < dur - 1e-6 ? `顯示 ${fmt(view.s)} – ${fmt(view.e)}（${(dur / len).toFixed(1)}×）` : '';
+}
+window.addEventListener('resize', draw);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+
+// ---------- 主波形：滑鼠/觸控選取 ----------
+let drag = null;
+function posToTime(e) {
+  const r = canvas.getBoundingClientRect();
+  return view.s + clamp((e.clientX - r.left) / r.width, 0, 1) * (view.e - view.s);
+}
+const edgeTol = () => (view.e - view.s) * 8 / canvas.clientWidth;
+canvas.addEventListener('pointerdown', e => {
+  if (!buffer) return;
+  canvas.setPointerCapture(e.pointerId);
+  const t = posToTime(e), tol = edgeTol();
+  if (Math.abs(t - sel.a) < tol) drag = { mode: 'a' };
+  else if (Math.abs(t - sel.b) < tol) drag = { mode: 'b' };
+  else drag = { mode: 'new', origin: t, moved: false };
+  if (drag.mode !== 'new') { active = drag.mode; syncInputs(); draw(); }
+});
+canvas.addEventListener('pointermove', e => {
+  if (!buffer) return;
+  const t = posToTime(e), tol = edgeTol();
+  hoverT = t;
+  if (!drag) {
+    canvas.style.cursor = (Math.abs(t - sel.a) < tol || Math.abs(t - sel.b) < tol) ? 'ew-resize' : 'crosshair';
+    if (!src) draw();
+    return;
+  }
+  if (drag.mode === 'a' || drag.mode === 'b') { setEdge(drag.mode, t); if (!video.seeking) showFrame(drag.mode === 'a' ? sel.a : sel.b); }
+  else if (Math.abs(t - drag.origin) > tol / 4) {
+    drag.moved = true;
+    sel.a = Math.min(drag.origin, t); sel.b = Math.max(drag.origin, t);
+    active = t < drag.origin ? 'a' : 'b';
+  }
+  syncInputs(); if (!src) draw();
+});
+canvas.addEventListener('pointerleave', () => { hoverT = null; if (!src) draw(); });
+canvas.addEventListener('pointerup', e => {
+  if (!drag) return;
+  const snap = $('snap').checked;
+  if (drag.mode === 'new' && !drag.moved) {
+    cursor = posToTime(e);
+    play(cursor, buffer.duration);              // 單擊 = 從該處播放
+  } else if (sel.b - sel.a < 0.01) {
+    sel = { a: 0, b: buffer.duration };
+  } else if (snap) {
+    if (drag.mode === 'a' || drag.mode === 'new') sel.a = Math.min(snapQuiet(sel.a), sel.b - 0.01);
+    if (drag.mode === 'b' || drag.mode === 'new') sel.b = Math.max(snapQuiet(sel.b), sel.a + 0.01);
+  }
+  drag = null; syncInputs(); draw();
+});
+
+// ---------- 總覽小條：拖曳移動檢視範圍 ----------
+let ovDrag = false;
+function ovMove(e) {
+  const r = ov.getBoundingClientRect(), t = clamp((e.clientX - r.left) / r.width, 0, 1) * buffer.duration;
+  const len = view.e - view.s;
+  setView(t - len / 2, t + len / 2); draw();
+}
+ov.addEventListener('pointerdown', e => { if (!buffer) return; ovDrag = true; ov.setPointerCapture(e.pointerId); ovMove(e); });
+ov.addEventListener('pointermove', e => { if (ovDrag) ovMove(e); });
+ov.addEventListener('pointerup', () => { ovDrag = false; });
+
+// ---------- 對齊靜音處 ----------
+// 在 t 附近找能量（RMS）最低的位置。搜尋範圍跟畫面縮放有關：約 12 像素寬，最多 ±0.3 秒
+function snapQuiet(t) {
+  const sr = buffer.sampleRate;
+  const win = clamp((view.e - view.s) * 12 / (canvas.clientWidth || 1000), 0.01, 0.3);
+  const frame = Math.max(32, Math.round(0.01 * sr)), hop = Math.max(16, frame >> 2), half = frame >> 1;
+  const from = Math.max(half, Math.floor((t - win) * sr)), to = Math.min(buffer.length - half, Math.ceil((t + win) * sr));
+  let best = t, bestScore = Infinity;
+  for (let p = from; p <= to; p += hop) {
+    let e = 0;
+    for (const ch of chData) for (let j = p - half; j < p + half; j += 2) e += ch[j] * ch[j];
+    const dist = Math.abs(p / sr - t) / win;      // 能量差不多時，偏好離原位置近的
+    const score = e * (1 + 0.3 * dist) + 1e-9 * dist;
+    if (score < bestScore) { bestScore = score; best = p / sr; }
+  }
+  return best;
+}
+$('snapNow').onclick = () => {
+  const a = snapQuiet(sel.a), b = snapQuiet(sel.b);
+  if (b - a > 0.01) { sel.a = a; sel.b = b; }
+  syncInputs(); draw();
+};
+
+// ---------- 微調 ----------
+let previewTimer = 0;
+function nudge(edge, d) {
+  setEdge(edge, (edge === 'a' ? sel.a : sel.b) + d);
+  // 如果邊跑出畫面就跟著捲過去
+  const t = edge === 'a' ? sel.a : sel.b, len = view.e - view.s;
+  if (t < view.s || t > view.e) setView(t - len / 2, t + len / 2);
+  syncInputs(); draw(); showFrame(t);
+  if ($('autoPreview').checked) {
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(() => {
+      if (edge === 'a') play(sel.a, Math.min(sel.a + 1.5, sel.b));
+      else play(Math.max(sel.a, sel.b - 1.5), sel.b);
+    }, 300);
+  }
+}
+document.querySelectorAll('button[data-edge]').forEach(b =>
+  b.onclick = () => nudge(b.dataset.edge, +b.dataset.d));
+
+// ---------- 播放 ----------
+function play(from, to) {
+  stop();
+  if (actx.state === 'suspended') actx.resume();
+  src = actx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(actx.destination);
+  playOffset = from; playStartCtx = actx.currentTime;
+  src.start(0, from, Math.max(0.01, to - from));
+  if (isVideo) { video.currentTime = mapT(from); video.play().catch(() => {}); }
+  const me = src;
+  src.onended = () => { if (src === me) { src = null; cancelAnimationFrame(raf); if (isVideo) video.pause(); draw(); } };
+  const tick = () => {
+    // 播放線跑出畫面時自動翻頁
+    const t = nowTime(), len = view.e - view.s;
+    if (!drag && !ovDrag && (t > view.e || t < view.s)) setView(t - len * 0.05, t + len * 0.95);
+    // 影片跟著聲音走：跨過剪掉的地方或差太多時就跳過去
+    if (isVideo && !video.seeking) {
+      const target = mapT(t);
+      if (Math.abs(video.currentTime - target) > 0.25) video.currentTime = target;
+    }
+    draw(); raf = requestAnimationFrame(tick);
+  };
+  tick();
+}
+function stop() {
+  if (src) { const s = src; src = null; try { s.stop(); } catch {} }
+  if (isVideo) video.pause();
+  cancelAnimationFrame(raf); draw();
+}
+$('playSel').onclick = () => play(sel.a, sel.b);
+$('playAll').onclick = () => play(0, buffer.duration);
+$('stop').onclick = stop;
+
+// ---------- 快捷鍵 ----------
+document.addEventListener('keydown', e => {
+  if (!buffer || $('editor').classList.contains('hidden')) return;
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  const k = e.key;
+  if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'Z')) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && (k === 'y' || k === 'Y')) { e.preventDefault(); redo(); return; }
+  if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); cutDelete(); return; }
+  if (k === 'k' || k === 'K') { cutKeep(); return; }
+  if (e.code === 'Space') { e.preventDefault(); src ? stop() : play(sel.a, sel.b); }
+  else if (k === 'ArrowLeft' || k === 'ArrowRight') {
+    e.preventDefault();
+    const d = (e.ctrlKey || e.metaKey) ? 1 : e.shiftKey ? 0.1 : 0.01;
+    nudge(active, k === 'ArrowLeft' ? -d : d);
+  }
+  else if (k === 'Tab') { e.preventDefault(); active = active === 'a' ? 'b' : 'a'; syncInputs(); draw(); }
+  else if (k === 'i' || k === 'I') {
+    const t = nowTime();
+    if (t >= sel.b) sel.b = buffer.duration;
+    setEdge('a', t); syncInputs(); draw();
+  }
+  else if (k === 'o' || k === 'O') {
+    const t = nowTime();
+    if (t <= sel.a) sel.a = 0;
+    setEdge('b', t); syncInputs(); draw();
+  }
+  else if (k === '+' || k === '=') zoom(0.5);
+  else if (k === '-' || k === '_') zoom(2);
+  else if (k === 'z' || k === 'Z') $('zoomSel').click();
+  else if (k === '0') $('zoomAll').click();
+});
+// 按鈕點完就取消焦點，避免空白鍵又觸發同一個按鈕
+document.addEventListener('click', e => { if (e.target.tagName === 'BUTTON') e.target.blur(); });
+
+// ---------- 剪下 + 淡入淡出 ----------
+function getClip() {
+  const sr = buffer.sampleRate;
+  const s = Math.floor(sel.a * sr), e = Math.floor(sel.b * sr), n = e - s;
+  const fi = Math.min(n, Math.floor((+$('fadeIn').value || 0) * sr));
+  const fo = Math.min(n, Math.floor((+$('fadeOut').value || 0) * sr));
+  const chans = [];
+  for (let c = 0; c < Math.min(2, buffer.numberOfChannels); c++) {
+    const d = buffer.getChannelData(c).slice(s, e);
+    for (let i = 0; i < fi; i++) d[i] *= i / fi;
+    for (let i = 0; i < fo; i++) d[n - 1 - i] *= i / fo;
+    chans.push(d);
+  }
+  return { chans, sr, n };
+}
+function toInt16(f) {
+  const out = new Int16Array(f.length);
+  for (let i = 0; i < f.length; i++) { const v = Math.max(-1, Math.min(1, f[i])); out[i] = v < 0 ? v * 0x8000 : v * 0x7fff; }
+  return out;
+}
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+const outName = ext => isAll()
+  ? `${fileBase}_剪輯.${ext}`
+  : `${fileBase}_${fmt(sel.a).replace(/[:.]/g, '-')}_${fmt(sel.b).replace(/[:.]/g, '-')}.${ext}`;
+
+// ---------- 匯出 MP4（ffmpeg.wasm，在瀏覽器裡處理） ----------
+const FF_BASE = 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd';
+// 編碼器的 worker 是 module worker，所以核心要用 ESM 版本
+const CORE_BASE = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm';
+let ffmpeg = null;
+const setStatus = s => { $('vstatus').textContent = s; };
+
+async function fetchBlobURL(url, type, onProgress) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('下載失敗：' + url);
+  if (!onProgress || !r.body) return URL.createObjectURL(new Blob([await r.arrayBuffer()], { type }));
+  // 伺服器會壓縮傳輸，content-length 不準，所以用已知的檔案大小（約 32 MB）估算進度
+  const reader = r.body.getReader(), chunks = []; let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value); got += value.length; onProgress(Math.min(0.99, got / 32.2e6));
+  }
+  return URL.createObjectURL(new Blob(chunks, { type }));
+}
+function loadScript(url) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = url; s.onload = res; s.onerror = () => rej(new Error('無法載入 ' + url));
+    document.head.appendChild(s);
+  });
+}
+// 用影片編碼器把影片的聲音轉成 WAV 再讀進來；影片真的沒有聲音時回傳 null
+async function extractAudio(file, status) {
+  const ff = await getFFmpeg(status);
+  status('從影片取出聲音中…');
+  const ext = ((file.name.match(/\.[a-z0-9]+$/i) || ['.mp4'])[0]).toLowerCase();
+  const inName = 'probe' + ext;
+  let noAudio = false;
+  const onLog = ({ message }) => { if (/does not contain any stream|matches no streams/i.test(message)) noAudio = true; };
+  ff.on('log', onLog);
+  try {
+    await ff.writeFile(inName, new Uint8Array(await file.arrayBuffer()));
+    const code = await ff.exec(['-i', inName, '-map', '0:a:0', '-vn', '-ac', '2', '-ar', '44100', '-c:a', 'pcm_s16le', 'probe.wav']);
+    if (code !== 0) { if (noAudio) return null; throw new Error('取出聲音失敗'); }
+    const wav = await ff.readFile('probe.wav');
+    return await actx.decodeAudioData(wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength));
+  } finally {
+    ff.off('log', onLog);
+    for (const n of [inName, 'probe.wav']) { try { await ff.deleteFile(n); } catch {} }
+  }
+}
+
+async function getFFmpeg(statusFn) {
+  if (ffmpeg) return ffmpeg;
+  const say = statusFn || setStatus;
+  const prog = $('prog');
+  say('第一次使用：下載影片編碼器（約 30 MB）…');
+  if (typeof FFmpegWASM === 'undefined') await loadScript(FF_BASE + '/ffmpeg.js');
+  const worker = await fetchBlobURL(FF_BASE + '/814.ffmpeg.js', 'text/javascript');
+  const core = await fetchBlobURL(CORE_BASE + '/ffmpeg-core.js', 'text/javascript');
+  const wasm = await fetchBlobURL(CORE_BASE + '/ffmpeg-core.wasm', 'application/wasm', p => {
+    prog.value = p; say(`第一次使用：下載影片編碼器（約 30 MB）… ${Math.round(p * 100)}%`);
+  });
+  say('啟動影片編碼器…');
+  const f = new FFmpegWASM.FFmpeg();
+  // 直接雙擊打開 HTML（file://）時，瀏覽器可能不讓編碼器啟動，會一直卡住，所以設個時限
+  let timer;
+  const timeout = new Promise((_, rej) => timer = setTimeout(() => rej(new Error(
+    location.protocol === 'file:' || location.origin === 'null'
+      ? '影片編碼器無法啟動。請改用「啟動阿系呦影音剪輯.bat」打開這個剪輯器再試一次'
+      : '影片編碼器啟動逾時，請重新整理頁面再試')), 30000));
+  try {
+    await Promise.race([f.load({ coreURL: core, wasmURL: wasm, classWorkerURL: worker }), timeout]);
+  } catch (e) {
+    try { f.terminate(); } catch {}
+    throw e;
+  } finally { clearTimeout(timer); }
+  ffmpeg = f;
+  return f;
+}
+
+$('exportMp4').onclick = async () => {
+  if (!isVideo || !mediaFile) return;
+  stop();
+  const out = isAll() ? segs : sliceSegs(segs, sel.a, sel.b);
+  const total = out.reduce((a, [s, e]) => a + e - s, 0);
+  const fast = $('mp4Mode').value === 'fast';
+  const prog = $('prog'), btns = document.querySelectorAll('button');
+  btns.forEach(b => b.disabled = true);
+  prog.classList.remove('hidden'); prog.value = 0;
+  const ext = ((mediaFile.name.match(/\.[a-z0-9]+$/i) || ['.mp4'])[0]).toLowerCase();
+  const inName = 'in' + ext;
+  let ff = null, onLog = null;
+  try {
+    ff = await getFFmpeg();
+    setStatus('讀入影片中…'); prog.value = 0;
+    await ff.writeFile(inName, new Uint8Array(await mediaFile.arrayBuffer()));
+    onLog = ({ message }) => {
+      const m = /time=\s*(\d+):(\d+):([\d.]+)/.exec(message);
+      if (m) {
+        const t = +m[1] * 3600 + +m[2] * 60 + +m[3];
+        prog.value = Math.min(1, t / total);
+        setStatus(`輸出影片中… ${Math.round(prog.value * 100)}%`);
+      }
+    };
+    ff.on('log', onLog);
+    setStatus('輸出影片中…');
+
+    let args;
+    if (fast) {
+      // 不重新編碼：用 concat 把每一段原檔接起來，切點會落在最近的關鍵影格
+      const list = out.map(([s, e]) => `file '${inName}'\ninpoint ${s.toFixed(3)}\noutpoint ${e.toFixed(3)}`).join('\n');
+      await ff.writeFile('list.txt', new TextEncoder().encode(list));
+      args = ['-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c', 'copy',
+              '-avoid_negative_ts', 'make_zero', '-movflags', '+faststart', 'out.mp4'];
+    } else {
+      // 精準：每一段用 trim 切出來再接起來，重新編碼
+      const n = out.length, f = [];
+      f.push(`[0:v]split=${n}${out.map((_, i) => `[vs${i}]`).join('')}`);
+      if (hasAudio) f.push(`[0:a]asplit=${n}${out.map((_, i) => `[as${i}]`).join('')}`);
+      const labels = [];
+      out.forEach(([s, e], i) => {
+        f.push(`[vs${i}]trim=start=${s.toFixed(4)}:end=${e.toFixed(4)},setpts=PTS-STARTPTS[v${i}]`);
+        labels.push(`[v${i}]`);
+        if (hasAudio) {
+          f.push(`[as${i}]atrim=start=${s.toFixed(4)}:end=${e.toFixed(4)},asetpts=PTS-STARTPTS[a${i}]`);
+          labels.push(`[a${i}]`);
+        }
+      });
+      f.push(`${labels.join('')}concat=n=${n}:v=1:a=${hasAudio ? 1 : 0}[v]${hasAudio ? '[ac]' : ''}`);
+      if (hasAudio) {
+        const fi = +$('fadeIn').value || 0, fo = +$('fadeOut').value || 0, af = [];
+        if (fi > 0) af.push(`afade=t=in:st=0:d=${fi}`);
+        if (fo > 0) af.push(`afade=t=out:st=${Math.max(0, total - fo).toFixed(3)}:d=${fo}`);
+        f.push(`[ac]${af.join(',') || 'anull'}[a]`);
+      }
+      args = ['-i', inName, '-filter_complex', f.join(';'), '-map', '[v]',
+              ...(hasAudio ? ['-map', '[a]', '-c:a', 'aac', '-b:a', '192k'] : []),
+              '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-pix_fmt', 'yuv420p',
+              '-movflags', '+faststart', 'out.mp4'];
+    }
+    const code = await ff.exec(args);
+    if (code !== 0) throw new Error(fast ? '快速模式不支援這個檔案，請改用「精準剪輯」' : '影片處理失敗');
+    const data = await ff.readFile('out.mp4');
+    download(new Blob([data], { type: 'video/mp4' }), outName('mp4'));
+    setStatus(`完成！已輸出 ${fmt(total)} 的影片${fast && (+$('fadeIn').value || +$('fadeOut').value) ? '（快速模式不會套用淡入淡出）' : ''}`);
+  } catch (err) {
+    console.error(err);
+    setStatus('匯出失敗：' + (err && err.message || err) + (mediaFile.size > 1.5e9 ? '（檔案太大，瀏覽器處理不了，建議小於 1.5 GB）' : ''));
+  } finally {
+    if (ff) {
+      if (onLog) ff.off('log', onLog);
+      for (const n of [inName, 'out.mp4', 'list.txt']) { try { await ff.deleteFile(n); } catch {} }
+    }
+    prog.classList.add('hidden');
+    btns.forEach(b => b.disabled = false);
+    $('undo').disabled = !undoStack.length; $('redo').disabled = !redoStack.length;
+  }
+};
+
+// ---------- 匯出 MP3 ----------
+$('exportMp3').onclick = async () => {
+  if (!hasAudio) { alert('這個影片沒有聲音，無法匯出 MP3。'); return; }
+  if (typeof lamejs === 'undefined') { alert('MP3 編碼器載入失敗（需要網路連線）。可以先改用「匯出 WAV」。'); return; }
+  stop();
+  const { chans, sr, n } = getClip();
+  const stereo = chans.length === 2;
+  const L = toInt16(chans[0]), R = stereo ? toInt16(chans[1]) : null;
+  const enc = new lamejs.Mp3Encoder(stereo ? 2 : 1, sr, +$('kbps').value);
+  const parts = [], BLOCK = 1152, prog = $('prog'), btns = document.querySelectorAll('button');
+  btns.forEach(b => b.disabled = true);
+  prog.classList.remove('hidden');
+  for (let i = 0; i < n; i += BLOCK) {
+    const l = L.subarray(i, i + BLOCK);
+    const buf = stereo ? enc.encodeBuffer(l, R.subarray(i, i + BLOCK)) : enc.encodeBuffer(l);
+    if (buf.length) parts.push(new Uint8Array(buf));
+    if ((i / BLOCK) % 200 === 0) { prog.value = i / n; await new Promise(r => setTimeout(r)); }
+  }
+  const end = enc.flush(); if (end.length) parts.push(new Uint8Array(end));
+  prog.classList.add('hidden'); btns.forEach(b => b.disabled = false);
+  download(new Blob(parts, { type: 'audio/mpeg' }), outName('mp3'));
+};
+
+// ---------- 匯出 WAV ----------
+$('exportWav').onclick = () => {
+  if (!hasAudio) { alert('這個影片沒有聲音，無法匯出 WAV。'); return; }
+  const { chans, sr, n } = getClip();
+  const nc = chans.length, ab = new ArrayBuffer(44 + n * nc * 2), v = new DataView(ab);
+  const ws = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  ws(0, 'RIFF'); v.setUint32(4, 36 + n * nc * 2, true); ws(8, 'WAVE'); ws(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, nc, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * nc * 2, true); v.setUint16(32, nc * 2, true);
+  v.setUint16(34, 16, true); ws(36, 'data'); v.setUint32(40, n * nc * 2, true);
+  const ints = chans.map(toInt16);
+  let o = 44;
+  for (let i = 0; i < n; i++) for (let c = 0; c < nc; c++) { v.setInt16(o, ints[c][i], true); o += 2; }
+  download(new Blob([ab], { type: 'audio/wav' }), outName('wav'));
+};
+</script>
+</body>
+</html>

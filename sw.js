@@ -26,6 +26,7 @@ self.addEventListener('fetch', function (e) {
   var url = new URL(req.url);
   var isFont = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
   if (url.origin !== location.origin && !isFont) return;
+  if (url.pathname.indexOf('/editor/') !== -1) return;
 
   e.respondWith(caches.open(CACHE).then(function (cache) {
     // 字型很少變動：先用快取
